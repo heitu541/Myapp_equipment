@@ -1,0 +1,16 @@
+# .streamlit/config.toml - Streamlit界面配置
+[theme]
+primaryColor = "#4CAF50"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+font = "sans serif"
+
+[server]
+maxUploadSize = 200
+# 移除冲突的配置，保持默认值
+# enableCORS = false  # 移除这行
+# enableXsrfProtection = true  # 移除这行
+
+[browser]
+gatherUsageStats = false
