@@ -926,77 +926,88 @@ def show_equipment_management():
             st.rerun()
     
     try:
-        from utils import Utils
+        # 获取当前设备列表
+        db_manager = st.session_state.db_manager
+        if not hasattr(db_manager, 'get_all_equipment'):
+            st.error("数据库不支持设备管理功能")
+            return
         
-        # 获取当前预设设备
-        current_devices = Utils.get_preset_equipment()
+        current_devices_data = db_manager.get_all_equipment()
+        current_devices = [device['name'] for device in current_devices_data]
         
         # 清除可能存在的成功消息标志
         if 'show_success_msg' in st.session_state:
             del st.session_state.show_success_msg
         
         # 显示当前设备列表
-        st.subheader("📋 当前预设设备列表")
+        st.subheader("📋 当前设备列表")
         
         if not current_devices:
-            st.info("暂无预设设备")
+            st.info("暂无设备")
         else:
             # 使用session state管理删除状态
             delete_key = f"delete_confirm_{len(current_devices)}"
             if delete_key not in st.session_state:
                 st.session_state[delete_key] = None
             
-            for i, device in enumerate(current_devices, 1):
+            for i, device_data in enumerate(current_devices_data, 1):
+                device_name = device_data['name']
+                device_id = device_data['id']
                 col1, col2 = st.columns([4, 1])
                 with col1:
-                    st.write(f"{i}. {device}")
+                    st.write(f"{i}. {device_name}")
                 with col2:
                     delete_btn_key = f"delete_btn_{i}"
                     if st.button(f"删除", key=delete_btn_key, use_container_width=True):
-                        # 设置要删除的设备索引
-                        st.session_state[delete_key] = i - 1
+                        # 设置要删除的设备ID
+                        st.session_state[delete_key] = device_id
                         st.rerun()
             
             # 处理删除确认
             if st.session_state[delete_key] is not None:
-                delete_index = st.session_state[delete_key]
-                device_to_delete = current_devices[delete_index]
+                delete_id = st.session_state[delete_key]
+                # 找到要删除的设备名称
+                device_to_delete = None
+                for device_data in current_devices_data:
+                    if device_data['id'] == delete_id:
+                        device_to_delete = device_data['name']
+                        break
                 
-                with st.container(border=True):
-                    st.warning(f"⚠️ 确定要删除设备 '{device_to_delete}' 吗？")
-                    
-                    col_confirm, col_cancel = st.columns(2)
-                    with col_confirm:
-                        confirm_key = f"confirm_delete_{delete_index}"
-                        if st.button("确认删除", key=confirm_key, type="primary", use_container_width=True):
-                            try:
-                                # 删除设备
-                                current_devices.pop(delete_index)
-                                if Utils.save_preset_equipment(current_devices):
-                                    # 清理session state
-                                    st.session_state[delete_key] = None
-                                    # 显示成功消息
-                                    success_msg = st.success(f"✅ 已删除设备: {device_to_delete}，页面将在2秒后刷新...")
-                                    time.sleep(2)
-                                    success_msg.empty()
-                                    st.rerun()
-                                else:
-                                    error_msg = st.error("❌ 删除失败")
+                if device_to_delete:
+                    with st.container(border=True):
+                        st.warning(f"⚠️ 确定要删除设备 '{device_to_delete}' 吗？")
+                        
+                        col_confirm, col_cancel = st.columns(2)
+                        with col_confirm:
+                            confirm_key = f"confirm_delete_{delete_id}"
+                            if st.button("确认删除", key=confirm_key, type="primary", use_container_width=True):
+                                try:
+                                    # 删除设备
+                                    if db_manager.delete_equipment(delete_id):
+                                        # 清理session state
+                                        st.session_state[delete_key] = None
+                                        # 显示成功消息
+                                        success_msg = st.success(f"✅ 已删除设备: {device_to_delete}，页面将在2秒后刷新...")
+                                        time.sleep(2)
+                                        success_msg.empty()
+                                        st.rerun()
+                                    else:
+                                        error_msg = st.error("❌ 删除失败")
+                                        time.sleep(2)
+                                        error_msg.empty()
+                                        st.stop()
+                                except Exception as e:
+                                    error_msg = st.error(f"❌ 删除失败：{str(e)}")
                                     time.sleep(2)
                                     error_msg.empty()
                                     st.stop()
-                            except Exception as e:
-                                error_msg = st.error(f"❌ 删除失败：{str(e)}")
-                                time.sleep(2)
-                                error_msg.empty()
-                                st.stop()
-                    
-                    with col_cancel:
-                        cancel_key = f"cancel_delete_{delete_index}"
-                        if st.button("取消", key=cancel_key, use_container_width=True):
-                            # 清理session state
-                            st.session_state[delete_key] = None
-                            st.rerun()
+                        
+                        with col_cancel:
+                            cancel_key = f"cancel_delete_{delete_id}"
+                            if st.button("取消", key=cancel_key, use_container_width=True):
+                                # 清理session state
+                                st.session_state[delete_key] = None
+                                st.rerun()
         
         st.markdown("---")
         
@@ -1009,7 +1020,7 @@ def show_equipment_management():
         if 'add_device_submitted' not in st.session_state:
             st.session_state.add_device_submitted = False
         
-        with st.form("add_equipment_form"):  # 移除 clear_on_submit=True
+        with st.form("add_equipment_form"):
             new_device = st.text_input("设备名称", 
                                      value=st.session_state.new_device_input,
                                      placeholder="请输入实验设备名称",
@@ -1055,16 +1066,15 @@ def show_equipment_management():
                 st.stop()
             else:
                 try:
-                    # 添加新设备
-                    current_devices.append(device_name)
-                    if Utils.save_preset_equipment(current_devices):
+                    # 添加新设备到数据库
+                    if db_manager.add_equipment(device_name):
                         # 显示成功消息
                         success_msg = st.success(f"✅ 已添加设备: {device_name}，页面将在2秒后刷新...")
                         time.sleep(2)
                         success_msg.empty()
                         st.rerun()
                     else:
-                        error_msg = st.error("❌ 添加失败，无法保存到配置文件")
+                        error_msg = st.error("❌ 添加失败，设备可能已存在")
                         time.sleep(2)
                         error_msg.empty()
                         st.stop()
@@ -1074,20 +1084,26 @@ def show_equipment_management():
                     error_msg.empty()
                     st.stop()
         
-        # 处理清空所有设备的确认
+        # 处理清空所有设备的确认（软删除）
         if st.session_state.get('clear_all_confirm', False):
             with st.container(border=True):
-                st.warning("⚠️ 确定要清空所有预设设备吗？此操作不可恢复！")
+                st.warning("⚠️ 确定要清空所有设备吗？此操作会将所有设备标记为不活跃！")
                 
                 col_confirm, col_cancel = st.columns(2)
                 with col_confirm:
                     if st.button("确认清空", key="confirm_clear_all", type="primary", use_container_width=True):
                         try:
-                            if Utils.save_preset_equipment([]):
+                            # 软删除所有设备
+                            success_count = 0
+                            for device_data in current_devices_data:
+                                if db_manager.delete_equipment(device_data['id']):
+                                    success_count += 1
+                            
+                            if success_count > 0:
                                 # 清理session state
                                 st.session_state.clear_all_confirm = False
                                 # 显示成功消息
-                                success_msg = st.success("✅ 已清空所有预设设备，页面将在2秒后刷新...")
+                                success_msg = st.success(f"✅ 已清空 {success_count} 个设备，页面将在2秒后刷新...")
                                 time.sleep(2)
                                 success_msg.empty()
                                 st.rerun()
