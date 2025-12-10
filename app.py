@@ -118,10 +118,6 @@ def init_managers():
                     self.next_id += 1
                     return True
             
-            def delete_record(self, record_id):
-                self.records = [r for r in self.records if r['id'] != record_id]
-                return True
-            
             def get_record_by_id(self, record_id):
                 for r in self.records:
                     if r['id'] == record_id:
@@ -306,14 +302,15 @@ def show_records_table():
             st.info("📭 暂无记录")
             return
         
-        # 创建显示用的DataFrame
-        display_fields = ['登记时间', '测试日期', '测试时间', '姓名', '联系方式', '领导', '实验设备']
+        # 创建显示用的DataFrame - 增加"登记时间"和"最后修改时间"列
+        display_fields = ['登记时间', '最后修改', '测试日期', '测试时间', '姓名', '联系方式', '领导', '实验设备']
         
         display_data = []
         for record in records:
             record_id = record[0]  # ID
             display_tuple = (
                 record[1],  # 登记时间
+                record[12],  # 最后修改时间
                 record[2],  # 测试日期
                 record[3],  # 测试时间
                 record[4],  # 姓名
@@ -353,7 +350,7 @@ def show_records_table():
             try:
                 if 'T' in dt_str:
                     dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
-                    return dt.strftime("%Y-%m-%d %H:%M")
+                    return dt.strftime("%Y-%m-%d %H:%M:%S")  # 修改为包含秒的格式
                 else:
                     return dt_str
             except:
@@ -362,6 +359,7 @@ def show_records_table():
         # 应用格式化
         if not df_display.empty:
             df_display['登记时间'] = df_display['登记时间'].apply(format_datetime)
+            df_display['最后修改'] = df_display['最后修改'].apply(format_datetime)
             df_display['测试日期'] = pd.to_datetime(df_display['测试日期']).dt.strftime('%Y-%m-%d')
         
         # 显示表格
@@ -373,7 +371,8 @@ def show_records_table():
             use_container_width=True,
             hide_index=False,
             column_config={
-                "登记时间": st.column_config.DatetimeColumn("登记时间", format="YYYY-MM-DD HH:mm"),
+                "登记时间": st.column_config.DatetimeColumn("登记时间", format="YYYY-MM-DD HH:mm:ss"),
+                "最后修改": st.column_config.DatetimeColumn("最后修改", format="YYYY-MM-DD HH:mm:ss"),
                 "测试日期": st.column_config.DateColumn("测试日期", format="YYYY-MM-DD"),
                 "测试时间": st.column_config.TextColumn("测试时间"),
                 "姓名": st.column_config.TextColumn("姓名", width="medium"),
@@ -386,13 +385,13 @@ def show_records_table():
         
         st.caption(f"显示 {len(df_display)} 条记录")
         
-        # 记录详情和操作区域
+        # 记录详情区域（去掉操作部分）
         st.subheader("🔍 记录详情")
         
         if not df_display.empty:
             # 选择记录查看详情
             selected_idx = st.selectbox(
-                "选择记录查看详情或操作",
+                "选择记录查看详情",
                 range(len(df_display)),
                 format_func=lambda idx: f"{df_display.iloc[idx]['姓名']} - {df_display.iloc[idx]['实验设备']} ({df_display.iloc[idx]['测试日期']})",
                 key="record_selector"
@@ -401,250 +400,29 @@ def show_records_table():
             if selected_idx is not None:
                 # 获取对应的完整记录
                 record_id, full_record_tuple = full_records[selected_idx]
-                selected_display_record = df_display.iloc[selected_idx]
+                selected_display_record = df_display.iloc[idx]
                 
-                # 创建两个选项卡：查看和编辑
-                tab1, tab2 = st.tabs(["📋 查看详情", "✏️ 编辑记录"])
-                
-                with tab1:
-                    # 显示详情卡片
-                    with st.container(border=True):
-                        col1, col2 = st.columns([1, 2])
-                        
-                        with col1:
-                            st.markdown("**基本信息**")
-                            st.write(f"**姓名**: {selected_display_record['姓名']}")
-                            st.write(f"**领导**: {selected_display_record['领导']}")
-                            st.write(f"**联系方式**: {selected_display_record['联系方式']}")
-                            st.write(f"**测试日期**: {selected_display_record['测试日期']}")
-                            
-                        with col2:
-                            st.markdown("**使用信息**")
-                            st.write(f"**实验设备**: {selected_display_record['实验设备']}")
-                            st.write(f"**测试时间**: {selected_display_record['测试时间']}")
-                            st.write(f"**登记时间**: {selected_display_record['登记时间']}")
-                            st.write(f"**机时**: {full_record_tuple[8]:.1f} 小时")
-                            st.write(f"**费用**: {full_record_tuple[9]} 元")
-                            if full_record_tuple[10]:  # 备注
-                                st.write(f"**备注**: {full_record_tuple[10]}")
+                # 显示详情卡片
+                with st.container(border=True):
+                    col1, col2 = st.columns([1, 2])
                     
-                    # 操作按钮 - 只保留删除按钮
-                    st.markdown("---")
-                    if st.button("🗑️ 删除此记录", use_container_width=True, type="secondary", key=f"delete_{record_id}"):
-                        # 检查是否已认证，如果未认证，先显示密码验证
-                        if not st.session_state.is_authenticated:
-                            # 直接在这里嵌入密码验证
-                            with st.form(f"delete_auth_inline_{record_id}"):
-                                st.warning("需要验证管理员密码才能删除记录")
-                                password = st.text_input("请输入管理员密码", type="password", 
-                                                       key=f"delete_pwd_inline_{record_id}")
-                                submitted = st.form_submit_button("验证")
-                                
-                                if submitted:
-                                    if verify_password(password):
-                                        st.session_state.is_authenticated = True
-                                        st.success("验证成功！现在可以删除记录")
-                                        # 重新渲染以显示删除确认对话框
-                                        st.rerun()
-                                    else:
-                                        st.error("密码错误！")
-                        else:
-                            # 已认证，显示删除确认对话框
-                            delete_record(record_id)
-                
-                with tab2:
-                    # 内嵌编辑表单
-                    if not st.session_state.is_authenticated:
-                        # 先要求密码验证
-                        with st.form(f"verify_edit_tab_{record_id}"):
-                            st.info("🔐 需要管理员权限才能编辑记录")
-                            password = st.text_input("请输入管理员密码", type="password")
-                            submitted = st.form_submit_button("验证")
-                            
-                            if submitted:
-                                if verify_password(password):
-                                    st.session_state.is_authenticated = True
-                                    st.success("✅ 验证成功！现在可以编辑记录")
-                                    st.rerun()
-                                else:
-                                    st.error("❌ 密码错误！")
-                    else:
-                        # 显示编辑表单
-                        st.info(f"✏️ 正在编辑记录 ID: {record_id}")
+                    with col1:
+                        st.markdown("**基本信息**")
+                        st.write(f"**姓名**: {selected_display_record['姓名']}")
+                        st.write(f"**领导**: {selected_display_record['领导']}")
+                        st.write(f"**联系方式**: {selected_display_record['联系方式']}")
+                        st.write(f"**测试日期**: {selected_display_record['测试日期']}")
+                        st.write(f"**测试时间**: {selected_display_record['测试时间']}")
                         
-                        # 从记录中提取数据
-                        record = st.session_state.db_manager.get_record_by_id(record_id)
-                        if record:
-                            # 解析测试时间
-                            test_time = record.get('test_time', '')
-                            start_time = '08:00'
-                            end_time = '09:00'
-                            if test_time and '-' in test_time:
-                                try:
-                                    times = test_time.split('-')
-                                    start_time = times[0].strip()
-                                    end_time = times[1].strip() if len(times) > 1 else '09:00'
-                                except:
-                                    pass
-                            
-                            # 处理日期
-                            test_date_value = record.get('test_date', date.today())
-                            if isinstance(test_date_value, str):
-                                try:
-                                    test_date_value = datetime.strptime(test_date_value, '%Y-%m-%d').date()
-                                except:
-                                    test_date_value = date.today()
-                            
-                            # 编辑表单
-                            with st.form(f"edit_form_{record_id}"):
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    # 修改设备输入为下拉选择
-                                    from utils import Utils
-                                    preset_devices = Utils.get_preset_equipment()
-                                    
-                                    if not preset_devices:
-                                        st.error("⚠️ 没有可用的设备，请在设备管理中添加设备")
-                                        equipment = ""
-                                    else:
-                                        # 直接选择预设设备
-                                        current_equipment = record.get('equipment', '')
-                                        equipment = st.selectbox(
-                                            "实验设备 *",
-                                            options=preset_devices,
-                                            index=0 if not current_equipment else (
-                                                preset_devices.index(current_equipment) if current_equipment in preset_devices else 0
-                                            ),
-                                            help="请选择实验设备"
-                                        )
-                                    
-                                    test_date = st.date_input("测试日期 *", value=test_date_value)
-                                    
-                                    name = st.text_input("姓名 *", 
-                                                        value=record.get('name', ''),
-                                                        placeholder="请输入姓名")
-                                    contact = st.text_input("联系方式", 
-                                                        value=record.get('contact', ''),
-                                                        placeholder="电话/邮箱")
-                                
-                                with col2:
-                                    advisor = st.text_input("领导", 
-                                                        value=record.get('advisor', ''),
-                                                        placeholder="领导姓名")
-                                    
-                                    # 时间处理 - 修复step参数
-                                    time_col1, time_col2 = st.columns(2)
-                                    with time_col1:
-                                        try:
-                                            start_time_val = datetime.strptime(start_time, "%H:%M").time()
-                                        except:
-                                            start_time_val = datetime.strptime("08:00", "%H:%M").time()
-                                        # 将step参数明确转换为整数
-                                        start_time_input = st.time_input("开始时间", value=start_time_val, step=900)
-                                    
-                                    with time_col2:
-                                        try:
-                                            end_time_val = datetime.strptime(end_time, "%H:%M").time()
-                                        except:
-                                            end_time_val = datetime.strptime("09:00", "%H:%M").time()
-                                        # 将step参数明确转换为整数
-                                        end_time_input = st.time_input("结束时间", value=end_time_val, step=900)
-                                    
-                                    # 修复机器小时数的格式化
-                                    machine_hours_val = record.get('machine_hours', 0.0)
-                                    if machine_hours_val is None:
-                                        machine_hours_val = 0.0
-                                    machine_hours = st.number_input("机时（小时）", 
-                                                                min_value=0.0, 
-                                                                max_value=24.0,
-                                                                value=float(machine_hours_val), 
-                                                                step=0.5, 
-                                                                format="%.1f")
-                                    
-                                    # 修复费用的格式化
-                                    cost_val = record.get('cost', 0)
-                                    if cost_val is None:
-                                        cost_val = 0
-                                    cost = st.number_input("费用（元）", 
-                                                        min_value=0, 
-                                                        value=int(cost_val), 
-                                                        step=1)
-                                
-                                remark = st.text_area("备注", 
-                                                    value=record.get('remark', ''), 
-                                                    height=100,
-                                                    placeholder="请输入备注信息")
-                                
-                                # 表单验证
-                                def validate_edit_form():
-                                    errors = []
-                                    if not equipment.strip():
-                                        errors.append("实验设备为必填项")
-                                    if not name.strip():
-                                        errors.append("姓名为必填项")
-                                    if start_time_input >= end_time_input:
-                                        errors.append("结束时间必须晚于开始时间")
-                                    return errors
-                                
-                                col_save, col_cancel = st.columns(2)
-                                with col_save:
-                                    # 主提交按钮
-                                    submitted_form = st.form_submit_button("💾 保存修改", type="primary", use_container_width=True)
-                                
-                                with col_cancel:
-                                    # 取消按钮 - 必须放在表单内
-                                    cancel_button = st.form_submit_button("❌ 取消编辑", use_container_width=True)
-                                
-                                # 处理提交
-                                if submitted_form:
-                                    errors = validate_edit_form()
-                                    if errors:
-                                        for error in errors:
-                                            st.error(error)
-                                    else:
-                                        try:
-                                            # 组合时间段
-                                            test_time_str = f"{start_time_input.strftime('%H:%M')}-{end_time_input.strftime('%H:%M')}"
-                                            
-                                            record_data = {
-                                                'test_date': test_date.isoformat(),
-                                                'test_time': test_time_str,
-                                                'name': name,
-                                                'contact': contact,
-                                                'advisor': advisor,
-                                                'equipment': equipment,
-                                                'machine_hours': float(machine_hours),
-                                                'cost': int(cost),
-                                                'remark': remark
-                                            }
-                                            
-                                            success = st.session_state.db_manager.save_record(record_data, record_id)
-                                            
-                                            if success:
-                                                # 显示成功消息
-                                                success_msg = st.success("✅ 记录更新成功！页面将在2秒后刷新...")
-                                                time.sleep(2)
-                                                success_msg.empty()  # 清除消息
-                                                st.rerun()
-                                            else:
-                                                error_msg = st.error("❌ 更新失败，请检查数据格式")
-                                                time.sleep(2)
-                                                error_msg.empty()  # 清除消息
-                                                st.stop()
-                                                
-                                        except Exception as e:
-                                            logger.error(f"更新记录失败: {e}")
-                                            error_msg = st.error(f"❌ 更新失败：{str(e)}")
-                                            time.sleep(2)
-                                            error_msg.empty()  # 清除消息
-                                            st.stop()
-                                if cancel_button:
-                                    st.info("编辑已取消")
-                                    time.sleep(0.5)
-                                    st.rerun()
-                        else:
-                            st.error("无法加载记录数据")
+                    with col2:
+                        st.markdown("**使用信息**")
+                        st.write(f"**实验设备**: {selected_display_record['实验设备']}")
+                        st.write(f"**登记时间**: {selected_display_record['登记时间']}")
+                        st.write(f"**最后修改**: {selected_display_record['最后修改']}")
+                        st.write(f"**机时**: {full_record_tuple[8]:.1f} 小时")
+                        st.write(f"**费用**: {full_record_tuple[9]} 元")
+                        if full_record_tuple[10]:  # 备注
+                            st.write(f"**备注**: {full_record_tuple[10]}")
         
     except Exception as e:
         logger.error(f"加载数据失败: {e}")
@@ -913,72 +691,6 @@ def show_registration_form():
                 st.session_state.current_edit_id = None
                 st.session_state.menu = "📋 查看记录"
                 st.rerun()
-
-def delete_record(record_id: int):
-    """删除记录"""
-    # 先检查密码验证
-    if not st.session_state.is_authenticated:
-        # 显示密码验证对话框
-        with st.form(f"delete_auth_form_{record_id}"):
-            st.warning("需要验证管理员密码才能删除记录")
-            password = st.text_input("请输入管理员密码", type="password", 
-                                   key=f"delete_pwd_{record_id}")
-            submitted = st.form_submit_button("验证")
-            
-            if submitted:
-                if verify_password(password):
-                    st.session_state.is_authenticated = True
-                    success_msg = st.success("验证成功！")
-                    time.sleep(0.5)
-                    success_msg.empty()
-                    st.rerun()  # 重新加载页面以进入删除确认流程
-                else:
-                    st.error("密码错误！")
-        return  # 如果未验证，不继续执行删除逻辑
-    
-    try:
-        # 确认对话框
-        with st.form(f"confirm_delete_{record_id}"):
-            st.warning("⚠️ 确定要删除这条记录吗？此操作不可恢复！")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                confirm = st.form_submit_button("✅ 确认删除", type="primary", use_container_width=True)
-            with col2:
-                cancel = st.form_submit_button("❌ 取消", use_container_width=True)
-            
-            if confirm:
-                try:
-                    if st.session_state.db_manager.delete_record(record_id):
-                        # 显示成功消息
-                        success_container = st.empty()
-                        success_container.success("✅ 记录删除成功！页面将在2秒后刷新...")
-                        time.sleep(2)
-                        success_container.empty()
-                        # 清除选择状态，避免显示已删除的记录
-                        if 'record_selector' in st.session_state:
-                            st.session_state.record_selector = 0
-                        st.session_state.is_authenticated = False  # 删除后需要重新验证
-                        st.rerun()
-                    else:
-                        error_container = st.empty()
-                        error_container.error("❌ 删除失败，请重试")
-                        time.sleep(2)
-                        error_container.empty()
-                except Exception as e:
-                    logger.error(f"删除记录失败: {e}")
-                    error_container = st.empty()
-                    error_container.error(f"❌ 删除失败：{str(e)}")
-                    time.sleep(2)
-                    error_container.empty()
-            
-            if cancel:
-                st.info("删除操作已取消")
-                time.sleep(0.5)
-                st.rerun()
-    except Exception as e:
-        logger.error(f"删除记录失败: {e}")
-        st.error(f"删除记录失败：{str(e)}")
 
 # ==================== 修改密码组件 ====================
 def show_change_password():
