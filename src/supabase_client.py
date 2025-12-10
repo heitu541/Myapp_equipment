@@ -58,8 +58,11 @@ class SupabaseClient:
         if not self.client:
             return False
         try:
-            self.client.table(table).delete().eq('id', record_id).execute()
-            return True
+            response = self.client.table(table).delete().eq('id', record_id).execute()
+            # 检查是否成功删除
+            if hasattr(response, 'data'):
+                return True
+            return False
         except Exception as e:
             logger.error(f"删除失败: {e}")
             return False
