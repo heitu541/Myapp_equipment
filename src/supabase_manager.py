@@ -39,6 +39,187 @@ class SupabaseManager:
             # 检查表是否存在
             try:
                 self.client.select('entries', limit=1)
+                self.client.select('equipment', limit=1)  # 新增：检查设备表
+                logger.info("数据库表检查完成")
+                
+                # 初始化设置和设备
+                self.init_default_settings()
+                self.init_default_equipment()  # 新增：初始化设备
+                return True
+                
+            except Exception as e:
+                logger.error(f"表检查失败: {e}")
+                logger.info("请确保在Supabase中创建了entries、settings和equipment表")
+                return False
+                
+        except Exception as e:
+            logger.error(f"初始化表失败: {e}")
+            return False
+    
+    def init_default_equipment(self):
+        """初始化默认设备"""
+        if self.client is None:
+            return False
+            
+        try:
+            # 检查设备表是否为空
+            existing_equipment = self.get_all_equipment()
+            
+            # 如果没有设备，插入默认设备
+            if not existing_equipment:
+                default_equipment = [
+                    "疲劳性能试验机",
+                    "透射电子显微镜",
+                ]
+                
+                for equipment_name in default_equipment:
+                    self.add_equipment(equipment_name)
+                
+                logger.info("默认设备已初始化")
+            
+            return True
+                
+        except Exception as e:
+            logger.error(f"初始化默认设备失败: {e}")
+            return False
+    
+    # ========== 设备管理方法 ==========
+    
+    def get_all_equipment(self):
+        """获取所有设备"""
+        if self.client is None:
+            return []
+            
+        try:
+            result = self.client.select('equipment', 
+                                      order_by='name ASC', 
+                                      conditions={'is_active': True})
+            return result
+        except Exception as e:
+            logger.error(f"获取设备列表失败: {e}")
+            return []
+    
+    def get_equipment_by_name(self, name):
+        """根据名称获取设备"""
+        if self.client is None:
+            return None
+            
+        try:
+            result = self.client.select('equipment', conditions={'name': name})
+            return result[0] if result else None
+        except Exception as e:
+            logger.error(f"获取设备失败: {e}")
+            return None
+    
+    def add_equipment(self, name):
+        """添加新设备"""
+        if self.client is None:
+            return False
+            
+        try:
+            # 检查设备是否已存在
+            existing = self.get_equipment_by_name(name)
+            if existing:
+                # 如果存在但已停用，重新激活
+                if not existing.get('is_active', True):
+                    self.client.update('equipment', {'is_active': True}, existing['id'])
+                    return True
+                return False  # 已存在且激活
+            
+            # 插入新设备
+            data = {
+                'name': name,
+                'is_active': True
+            }
+            result = self.client.insert('equipment', data)
+            return result is not None
+                
+        except Exception as e:
+            logger.error(f"添加设备失败: {e}")
+            return False
+    
+    def update_equipment(self, equipment_id, name, is_active=True):
+        """更新设备"""
+        if self.client is None:
+            return False
+            
+        try:
+            data = {
+                'name': name,
+                'is_active': is_active
+            }
+            result = self.client.update('equipment', data, equipment_id)
+            return result is not None
+                
+        except Exception as e:
+            logger.error(f"更新设备失败: {e}")
+            return False
+    
+    def delete_equipment(self, equipment_id):
+        """软删除设备（标记为不活跃）"""
+        if self.client is None:
+            return False
+            
+        try:
+            data = {
+                'is_active': False
+            }
+            result = self.client.update('equipment', data, equipment_id)
+            return result is not None
+                
+        except Exception as e:
+            logger.error(f"删除设备失败: {e}")
+            return False
+    
+    def sync_equipment(self, device_names):
+        """同步设备列表（用于批量更新）"""
+        if self.client is None:
+            return False
+            
+        try:
+            # 获取当前所有设备
+            current_devices = self.get_all_equipment()
+            current_names = {device['name'] for device in current_devices}
+            new_names = set(device_names)
+            
+            # 需要添加的设备
+            to_add = new_names - current_names
+            for name in to_add:
+                self.add_equipment(name)
+            
+            # 需要软删除的设备（不在新列表中但存在的）
+            to_remove = current_names - new_names
+            for device in current_devices:
+                if device['name'] in to_remove:
+                    self.delete_equipment(device['id'])
+            
+            # 重新激活之前被删除但现在又添加的设备
+            for name in to_add:
+                # 检查是否有已删除的同名设备
+                try:
+                    deleted_device = self.client.select('equipment', 
+                                                       conditions={'name': name, 'is_active': False})
+                    if deleted_device:
+                        self.update_equipment(deleted_device[0]['id'], name, True)
+                except:
+                    pass
+            
+            return True
+                
+        except Exception as e:
+            logger.error(f"同步设备列表失败: {e}")
+            return False
+        .    
+    def init_tables(self):
+        """初始化数据库表结构"""
+        if self.client is None:
+            logger.warning("Supabase客户端未初始化")
+            return False
+            
+        try:
+            # 检查表是否存在
+            try:
+                self.client.select('entries', limit=1)
                 logger.info("数据库表检查完成")
                 
                 # 初始化设置
