@@ -187,28 +187,19 @@ class SupabaseManager:
             logger.error(f"保存记录失败: {e}")
             return False
     
-    def delete_record(self, record_id: int) -> bool:
-        """删除记录"""
-        if self.client is None:
+    def delete(self, table: str, record_id: int):
+        """删除数据"""
+        if not self.client:
             return False
-            
         try:
-            return self.client.delete('entries', record_id)
-        except Exception as e:
-            logger.error(f"删除记录失败: {e}")
+            response = self.client.table(table).delete().eq('id', record_id).execute()
+            # 检查是否成功删除
+            if hasattr(response, 'data'):
+                return True
             return False
-    
-    def get_record_by_id(self, record_id: int) -> Optional[Dict[str, Any]]:
-        """根据ID获取记录"""
-        if self.client is None:
-            return None
-            
-        try:
-            result = self.client.select('entries', conditions={"id": record_id}, limit=1)
-            return result[0] if result else None
         except Exception as e:
-            logger.error(f"获取记录失败: {e}")
-            return None
+            logger.error(f"删除失败: {e}")
+            return False
     
     # 在 supabase_manager.py 的 get_records() 方法中，修改日期过滤逻辑：
     def get_records(self, 
