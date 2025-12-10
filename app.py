@@ -431,9 +431,25 @@ def show_records_table():
                     # 操作按钮 - 只保留删除按钮
                     st.markdown("---")
                     if st.button("🗑️ 删除此记录", use_container_width=True, type="secondary", key=f"delete_{record_id}"):
-                        # 使用容器来管理状态
-                        delete_container = st.empty()
-                        with delete_container:
+                        # 检查是否已认证，如果未认证，先显示密码验证
+                        if not st.session_state.is_authenticated:
+                            # 直接在这里嵌入密码验证
+                            with st.form(f"delete_auth_inline_{record_id}"):
+                                st.warning("需要验证管理员密码才能删除记录")
+                                password = st.text_input("请输入管理员密码", type="password", 
+                                                       key=f"delete_pwd_inline_{record_id}")
+                                submitted = st.form_submit_button("验证")
+                                
+                                if submitted:
+                                    if verify_password(password):
+                                        st.session_state.is_authenticated = True
+                                        st.success("验证成功！现在可以删除记录")
+                                        # 重新渲染以显示删除确认对话框
+                                        st.rerun()
+                                    else:
+                                        st.error("密码错误！")
+                        else:
+                            # 已认证，显示删除确认对话框
                             delete_record(record_id)
                 
                 with tab2:
@@ -900,11 +916,36 @@ def show_registration_form():
 
 def delete_record(record_id: int):
     """删除记录"""
+    # 先检查密码验证
+    if not st.session_state.is_authenticated:
+        # 显示密码验证对话框
+        with st.form(f"delete_auth_form_{record_id}"):
+            st.warning("需要验证管理员密码才能删除记录")
+            password = st.text_input("请输入管理员密码", type="password", 
+                                   key=f"delete_pwd_{record_id}")
+            submitted = st.form_submit_button("验证")
+            
+            if submitted:
+                if verify_password(password):
+                    st.session_state.is_authenticated = True
+                    success_msg = st.success("验证成功！")
+                    time.sleep(0.5)
+                    success_msg.empty()
+                    st.rerun()  # 重新加载页面以进入删除确认流程
+                else:
+                    st.error("密码错误！")
+        return  # 如果未验证，不继续执行删除逻辑
+    
     try:
         # 确认对话框
         with st.form(f"confirm_delete_{record_id}"):
             st.warning("⚠️ 确定要删除这条记录吗？此操作不可恢复！")
-            confirm = st.form_submit_button("确认删除", type="primary")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                confirm = st.form_submit_button("✅ 确认删除", type="primary", use_container_width=True)
+            with col2:
+                cancel = st.form_submit_button("❌ 取消", use_container_width=True)
             
             if confirm:
                 try:
@@ -917,6 +958,7 @@ def delete_record(record_id: int):
                         # 清除选择状态，避免显示已删除的记录
                         if 'record_selector' in st.session_state:
                             st.session_state.record_selector = 0
+                        st.session_state.is_authenticated = False  # 删除后需要重新验证
                         st.rerun()
                     else:
                         error_container = st.empty()
@@ -929,6 +971,11 @@ def delete_record(record_id: int):
                     error_container.error(f"❌ 删除失败：{str(e)}")
                     time.sleep(2)
                     error_container.empty()
+            
+            if cancel:
+                st.info("删除操作已取消")
+                time.sleep(0.5)
+                st.rerun()
     except Exception as e:
         logger.error(f"删除记录失败: {e}")
         st.error(f"删除记录失败：{str(e)}")
