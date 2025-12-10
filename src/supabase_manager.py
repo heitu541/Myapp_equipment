@@ -157,11 +157,13 @@ class SupabaseManager:
             
             # 清理数据
             sanitized = self._sanitize_record_data(data)
-            now = datetime.now().isoformat()
+            from datetime import datetime
+            now = datetime.now()
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
             
             record_data = {
                 **sanitized,
-                'last_modified': now
+                'last_modified': now_str
             }
             
             if record_id:  # 更新记录
@@ -176,8 +178,8 @@ class SupabaseManager:
                 return result is not None
                 
             else:  # 插入新记录
-                record_data['register_datetime'] = now
-                record_data['created_at'] = now.split('T')[0]
+                record_data['register_datetime'] = now_str
+            record_data['created_at'] = now.strftime("%Y-%m-%d")
                 
                 result = self.client.insert('entries', record_data)
                 logger.info(f"插入新记录: {record_data.get('name')}")
